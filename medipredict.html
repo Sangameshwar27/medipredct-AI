@@ -1,1 +1,390 @@
 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#123d70">
+<title>MediPredict AI</title>
+
+<style>
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #f0f4f9;
+    color: #203047;
+}
+
+header {
+    background: #123d70;
+    color: white;
+    padding: 22px;
+}
+
+header h1 {
+    margin: 0;
+    font-size: 25px;
+}
+
+header p {
+    margin-bottom: 0;
+    font-size: 13px;
+}
+
+main {
+    padding: 16px;
+    max-width: 900px;
+    margin: auto;
+}
+
+.cards {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.card {
+    background: white;
+    padding: 18px;
+    border-radius: 14px;
+    box-shadow: 0 3px 12px #0000000a;
+}
+
+.card span {
+    color: #66758a;
+    font-size: 13px;
+}
+
+.card h2 {
+    margin-bottom: 0;
+    color: #123d70;
+}
+
+section {
+    background: white;
+    margin-top: 18px;
+    padding: 18px;
+    border-radius: 14px;
+}
+
+input, button {
+    width: 100%;
+    padding: 12px;
+    margin-top: 9px;
+    border-radius: 8px;
+    font-size: 15px;
+}
+
+input {
+    border: 1px solid #d7dfeb;
+}
+
+button {
+    background: #123d70;
+    color: white;
+    border: none;
+    cursor: pointer;
+}
+
+button.secondary {
+    background: #e7effb;
+    color: #123d70;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 12px;
+}
+
+th, td {
+    text-align: left;
+    padding: 10px 6px;
+    border-bottom: 1px solid #e0e7f0;
+    font-size: 12px;
+}
+
+.table-wrap {
+    overflow-x: auto;
+}
+
+#message {
+    font-size: 14px;
+    overflow-wrap: anywhere;
+}
+
+@media (min-width: 650px) {
+    .cards {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+}
+</style>
+</head>
+
+<body>
+
+<header>
+    <h1>💊 MediPredict AI</h1>
+    <p>Medicine Shortage Prediction & Expiry Prevention</p>
+</header>
+
+<main>
+
+    <div class="cards">
+        <div class="card">
+            <span>Medicine Batches</span>
+            <h2 id="total">0</h2>
+        </div>
+
+        <div class="card">
+            <span>Total Stock</span>
+            <h2 id="stock">0</h2>
+        </div>
+
+        <div class="card">
+            <span>Shortage Risks</span>
+            <h2 id="shortage">0</h2>
+        </div>
+
+        <div class="card">
+            <span>Expiring Soon</span>
+            <h2 id="expiring">0</h2>
+        </div>
+    </div>
+
+    <section>
+        <h3>➕ Add Medicine</h3>
+
+        <form id="medicineForm">
+            <input id="name" placeholder="Medicine name" required>
+            <input id="batch" placeholder="Batch number" required>
+            <input id="quantity" type="number" min="0"
+                   placeholder="Available quantity" required>
+            <input id="usage" type="number" min="0" step="0.1"
+                   placeholder="Average daily usage" required>
+            <input id="expiry" type="date" required>
+
+            <button type="submit">Add Medicine</button>
+        </form>
+
+        <p id="message" role="status"></p>
+    </section>
+
+    <section>
+        <h3>📦 Medicine Inventory</h3>
+
+        <input id="search" placeholder="Search medicine..."
+               aria-label="Search medicine">
+
+        <button class="secondary" onclick="renderInventory()">
+            Refresh Inventory
+        </button>
+
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Medicine</th>
+                        <th>Stock</th>
+                        <th>Expiry</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody id="inventory"></tbody>
+            </table>
+        </div>
+    </section>
+
+    <section>
+        <h3>⚠️ Inventory Alerts</h3>
+        <div id="alerts"></div>
+    </section>
+
+</main>
+
+<script>
+const STORAGE_KEY = "medipredict_demo_inventory";
+
+let medicines = [];
+
+try {
+    medicines = JSON.parse(
+        localStorage.getItem(STORAGE_KEY) || "[]"
+    );
+
+    if (!Array.isArray(medicines)) medicines = [];
+} catch {
+    medicines = [];
+}
+
+function save() {
+    localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify(medicines)
+    );
+}
+
+function analyze(m) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const expiry = new Date(m.expiry + "T00:00:00");
+    const days = Math.floor(
+        (expiry - today) / 86400000
+    );
+
+    const stockout = m.usage > 0
+        ? m.quantity / m.usage
+        : Infinity;
+
+    let shortage = "NORMAL";
+
+    if (m.quantity <= 0) shortage = "OUT OF STOCK";
+    else if (m.usage <= 0) shortage = "USAGE DATA NEEDED";
+    else if (stockout <= 3) shortage = "CRITICAL";
+    else if (stockout <= 7) shortage = "LOW STOCK";
+
+    let expiryStatus = "SAFE";
+
+    if (days < 0) expiryStatus = "EXPIRED";
+    else if (days <= 30) expiryStatus = "EXPIRING SOON";
+
+    return {
+        days,
+        stockout,
+        shortage,
+        expiryStatus
+    };
+}
+
+function renderInventory() {
+    const query = document.getElementById("search")
+        .value.toLowerCase().trim();
+
+    const filtered = medicines.filter(m =>
+        m.name.toLowerCase().includes(query) ||
+        m.batch.toLowerCase().includes(query)
+    );
+
+    const tbody = document.getElementById("inventory");
+    tbody.replaceChildren();
+
+    filtered.forEach(m => {
+        const a = analyze(m);
+        const tr = document.createElement("tr");
+
+        [
+            m.name,
+            String(m.quantity),
+            m.expiry,
+            a.shortage + " / " + a.expiryStatus
+        ].forEach(value => {
+            const td = document.createElement("td");
+            td.textContent = value;
+            tr.appendChild(td);
+        });
+
+        tbody.appendChild(tr);
+    });
+
+    document.getElementById("total").textContent =
+        medicines.length;
+
+    document.getElementById("stock").textContent =
+        medicines.reduce((sum, m) => sum + m.quantity, 0);
+
+    document.getElementById("shortage").textContent =
+        medicines.filter(m =>
+            ["CRITICAL", "LOW STOCK", "OUT OF STOCK"]
+                .includes(analyze(m).shortage)
+        ).length;
+
+    document.getElementById("expiring").textContent =
+        medicines.filter(m =>
+            analyze(m).expiryStatus === "EXPIRING SOON"
+        ).length;
+
+    const alerts = document.getElementById("alerts");
+    alerts.replaceChildren();
+
+    const risky = medicines.filter(m => {
+        const a = analyze(m);
+
+        return a.shortage !== "NORMAL" ||
+               a.expiryStatus !== "SAFE";
+    });
+
+    if (!risky.length) {
+        alerts.textContent = "No inventory risks detected.";
+    } else {
+        risky.forEach(m => {
+            const p = document.createElement("p");
+            const a = analyze(m);
+
+            p.textContent =
+                m.name + ": " + a.shortage +
+                ", " + a.expiryStatus;
+
+            alerts.appendChild(p);
+        });
+    }
+}
+
+document.getElementById("medicineForm")
+    .addEventListener("submit", event => {
+        event.preventDefault();
+
+        const name = document.getElementById("name")
+            .value.trim();
+
+        const batch = document.getElementById("batch")
+            .value.trim();
+
+        const quantity = Number(
+            document.getElementById("quantity").value
+        );
+
+        const usage = Number(
+            document.getElementById("usage").value
+        );
+
+        const expiry = document.getElementById("expiry").value;
+
+        if (!name || !batch || !expiry ||
+            quantity < 0 || usage < 0) {
+            document.getElementById("message").textContent =
+                "Enter valid medicine details.";
+            return;
+        }
+
+        if (medicines.some(m => m.batch === batch)) {
+            document.getElementById("message").textContent =
+                "This batch number already exists.";
+            return;
+        }
+
+        medicines.push({
+            name, batch, quantity, usage, expiry
+        });
+
+        save();
+        renderInventory();
+
+        document.getElementById("message").textContent =
+            "Medicine added successfully.";
+
+        event.target.reset();
+    });
+
+document.getElementById("search")
+    .addEventListener("input", renderInventory);
+
+renderInventory();
+</script>
+
+</body>
+</html>
